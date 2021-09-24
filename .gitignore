@@ -1,0 +1,11 @@
+/Library
+/Logs
+/Packages
+/ProjectSettings
+/Temp
+/UserSettings
+/.vsconfig
+/AmplifyShaderEditor.csproj
+/MyNewShaderMay.sln
+/Assets/*.meta
+*.meta
