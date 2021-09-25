@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Lambot_Mat
-  m_Shader: {fileID: 4800000, guid: 69dc723e5dcb7b24e86ee2256145fbfe, type: 3}
+  m_Name: Lambert_Mat
+  m_Shader: {fileID: 4800000, guid: 79fb5a913bd568243b01169603b4a06d, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -19,8 +19,7 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs: []
-    m_Floats:
-    - __dirty: 0
+    m_Floats: []
     m_Colors:
-    - _LightColor: {r: 1, g: 1, b: 1, a: 0}
+    - _MainColor: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
