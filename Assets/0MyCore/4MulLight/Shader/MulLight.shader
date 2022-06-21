@@ -24,7 +24,9 @@ Shader "Unlit/BRDFLight"
             #pragma multi_compile _ VERTEXLIGHT_ON
 
             #pragma vertex vert
-            #pragma fragment frag
+            #pragma fragment frag2
+
+            #define FORWARD_BASE_PASS
 
             #include "MyLight.cginc"
 

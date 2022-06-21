@@ -37,11 +37,22 @@ struct Interpolators
 void ComputeVertexLightColor(inout Interpolators i)
 {
     #if defined(VERTEXLIGHT_ON)
+        //实际上可以使用UnityCG定义的 Shade4PointLights 函数，提供：矢量、光色、衰减因子顶点位置法线
+        // i.vertexLightColor = Shade4PointLights(
+        //     unity_4LightPosX0, unity_4LightPosY0, unity_4LightPosZ0,
+        //     unity_LightColor[0].rgb, unity_LightColor[1].rgb,
+        //     unity_LightColor[2].rgb, unity_LightColor[3].rgb,
+        //     unity_4LightAtten0, i.worldPos, i.normal
+        // );
+
+        //以下是原理
         //Unity用这种方式最多支持四个顶点灯，并存储到4个float4变量中（这里没明白，具体得百度
         float3 lightPos = float3(unity_4LightPosX0.x, unity_4LightPosY0.x, unity_4LightPosZ0.x);
         float3 lightVec = lightPos - i.worldPos
-        float3 lightDir = normalize(lightVec)
-
+        float3 lightDir = normalize(lightVec);
+        float ndotl = DotClamped(i.normal, lightDir);
+        //Unity提供的：unity_4LightAttenuation 有助于近似估算像素光衰减的因素
+        float attenuation = 1 / (1+dot(lightVec, lightVec) * unity_4LightAtten0);
         i.vertexLightColor = unity_LightColor[0].rgb;
     #endif
 }
@@ -98,18 +109,6 @@ UnityLight CreateLight (Interpolators i)
     return light;
 }
 
-//新加入 如果使用了点光源：
-UnityIndirect CreateIndirectLight(Interpolators i)
-{
-    UnityIndirect indirectLight;
-    indirectLight.diffuse = 0;
-    indirectLight.specular = 0;
-
-    #if defined(VERTEXLIGHT_ON)
-        indirectLight.diffuse = i.vertexLightColor;
-    #endif
-    return indirectLight;
-}
 
 float4 frag (Interpolators i) : SV_Target
 {
@@ -141,17 +140,40 @@ float4 frag (Interpolators i) : SV_Target
     // light.ndotl = DotClamped(i.normal, lightDir);
 
     //间接光
-    // UnityIndirect indirectLight;
-    // indirectLight.diffuse = 0;
-    // indirectLight.specular = 0;
+    UnityIndirect indirectLight;
+    indirectLight.diffuse = 0;
+    indirectLight.specular = 0;
     
     return UNITY_BRDF_PBS(
         albedo, _SpecularColor,
         oneMinusReflectivity, _Smoothness,
         i.normal, viewDir,
-        CreateLight(i), CreateIndirectLight(i)
+        CreateLight(i), indirectLight//CreateIndirectLight(i)
     );
+
+    //使用球谐函数：
+    // float3 shColor = ShadeSH9(float4(i.normal, 1));
+    // return float4(shColor, 1);
 }
+
+//新加入 如果使用了点光源：
+UnityIndirect CreateIndirectLight(Interpolators i)
+{
+    UnityIndirect indirectLight;
+    indirectLight.diffuse = 0;
+    indirectLight.specular = 0;
+
+    #if defined(VERTEXLIGHT_ON)
+        indirectLight.diffuse = i.vertexLightColor;
+    #endif
+
+    #if defined(FORWARD_BASE_PASS)
+        indirectLight.diffuse += max(0, ShadeSH9(float4(i.normal, 1)));
+    #endif
+
+    return indirectLight;
+}
+
 
 float4 frag2 (Interpolators i) : SV_Target
 {
@@ -160,7 +182,18 @@ float4 frag2 (Interpolators i) : SV_Target
 
     //漫反射
     float3 albedo = tex2D(_MainTex, i.uv).rgb;
+    float oneMinusReflectivity = 1 - _Metallic;
     
     // return float4(albedo * (dot(lightDir, i.normal)*0.5+0.5), 1);
-    return float4(albedo * DotClamped(lightDir, i.normal), 1);
+    // return float4(albedo * DotClamped(lightDir, i.normal), 1);
+
+    return UNITY_BRDF_PBS(
+        albedo, _SpecularColor,
+        oneMinusReflectivity, _Smoothness,
+        i.normal, viewDir,
+        CreateLight(i), CreateIndirectLight(i)
+    );
+
+    // float3 shColor = ShadeSH9(float4(i.normal, 1));
+    // return float4(shColor, 1);
 }
