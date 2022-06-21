@@ -2,6 +2,7 @@
 #if !defined(MY_LIGHTING_INCLUDED)
 #define MY_LIGHTING_INCLUDED
 
+#include "AutoLight.cginc"
 #include "UnityPBSLighting.cginc"   //PBS包含上述两个光照文件
 
 #endif
@@ -25,7 +26,25 @@ struct Interpolators
     float2 uv : TEXCOORD0;
     float3 normal : TEXCOORD1;
     float3 worldPos : TEXCOORD2;
+
+    //新加入：顶点光：
+    #if defined(VERTEXLIGHT_ON)
+        float3 vertexLightColor : TEXCOORD3;
+    #endif
 };
+
+//计算顶点光的颜色：
+void ComputeVertexLightColor(inout Interpolators i)
+{
+    #if defined(VERTEXLIGHT_ON)
+        //Unity用这种方式最多支持四个顶点灯，并存储到4个float4变量中（这里没明白，具体得百度
+        float3 lightPos = float3(unity_4LightPosX0.x, unity_4LightPosY0.x, unity_4LightPosZ0.x);
+        float3 lightVec = lightPos - i.worldPos
+        float3 lightDir = normalize(lightVec)
+
+        i.vertexLightColor = unity_LightColor[0].rgb;
+    #endif
+}
 
 Interpolators vert (appdata v)
 {
@@ -35,6 +54,9 @@ Interpolators vert (appdata v)
     o.normal = UnityObjectToWorldNormal(v.normal);
     o.normal = normalize(o.normal);
     o.worldPos = mul(unity_ObjectToWorld, v.vertex);
+
+    //新加入：顶点光
+    ComputeVertexLightColor(o);
     return o;
 }
 
@@ -45,16 +67,48 @@ UnityLight CreateLight (Interpolators i)
     //_WorldSpaceLightPos0.xyz在平行光的情况下是代表平行光的方向（从模型指向光源-无穷远
     //而在点光源的照射下，_WorldSpaceLightPos0.xyz代表的是点光源的光源（一个出发点）
     //所以我们需要通过减去世界坐标点来获得他的方向（模型指向光源
-    float3 lightDir = _WorldSpaceLightPos0.xyz - i.worldPos;
-    light.dir = normalize(lightDir);
+    // float3 lightDir = _WorldSpaceLightPos0.xyz - i.worldPos;
+    // light.dir = normalize(lightDir);
+
+    //点光源和平行光的计算公式是不同的，因此我们应该用define来区分他们
+    //新加入！聚光灯！聚光灯和点光源一样， worldSpaceLightPos0 代表的是光源的位置，所以：
+    //新加入 聚光灯和点光源COOKIE
+    #if defined(POINT) || defined(SPOT) || defined(POINT_COOKIE)
+        light.dir = normalize(_WorldSpaceLightPos0.xyz - i.worldPos);
+    #else
+        light.dir = _WorldSpaceLightPos0.xyz;
+    #endif
+
+
     //计算一下点光源的衰减公式，因为Unity会无论光源的远近都会给物体进行渲染（前向渲染）
     //所以为了正确真实的效果，我们应该计算一下点光源的距离衰减公式，并*上color得到正确的颜色
     //衰减公式： 1 / d*d 其中 d 是距离点光源的距离
     //那么当 d 无限趋于0的时候，attenuation 会指数级暴涨，非常亮，导致能量不守恒，因此分母应该+1
-    float attenuation = 1 / 1 + dot(lightDir, lightDir);
+    // float attenuation = 1 / 1 + dot(light.dir, light.dir);
+
+    //但是，上面的这个 attenuation 的计算有个问题：没有考虑光照的范围，导致一离开指定的距离，就会立即消失
+    //非常突兀，所以应该让光是慢慢消退的
+    //头文件 AutoLight.cginc 已经帮我们定义了公式，这样写：
+    UNITY_LIGHT_ATTENUATION(attenuation, 0, i.worldPos);
+    //这个宏定义的正确使用前提是 必须定义 POINT 表示使用了点光源，因此你应该在 #include AutoLight.cginc
+    //之前 写一个 #define POINT
+
     light.color = _LightColor0.rgb * attenuation;
     light.ndotl = DotClamped(i.normal, light.dir);
     return light;
+}
+
+//新加入 如果使用了点光源：
+UnityIndirect CreateIndirectLight(Interpolators i)
+{
+    UnityIndirect indirectLight;
+    indirectLight.diffuse = 0;
+    indirectLight.specular = 0;
+
+    #if defined(VERTEXLIGHT_ON)
+        indirectLight.diffuse = i.vertexLightColor;
+    #endif
+    return indirectLight;
 }
 
 float4 frag (Interpolators i) : SV_Target
@@ -87,14 +141,26 @@ float4 frag (Interpolators i) : SV_Target
     // light.ndotl = DotClamped(i.normal, lightDir);
 
     //间接光
-    UnityIndirect indirectLight;
-    indirectLight.diffuse = 0;
-    indirectLight.specular = 0;
+    // UnityIndirect indirectLight;
+    // indirectLight.diffuse = 0;
+    // indirectLight.specular = 0;
     
     return UNITY_BRDF_PBS(
         albedo, _SpecularColor,
         oneMinusReflectivity, _Smoothness,
         i.normal, viewDir,
-        CreateLight(i), indirectLight
+        CreateLight(i), CreateIndirectLight(i)
     );
+}
+
+float4 frag2 (Interpolators i) : SV_Target
+{
+    float3 lightDir = _WorldSpaceLightPos0.xyz;
+    float3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
+
+    //漫反射
+    float3 albedo = tex2D(_MainTex, i.uv).rgb;
+    
+    // return float4(albedo * (dot(lightDir, i.normal)*0.5+0.5), 1);
+    return float4(albedo * DotClamped(lightDir, i.normal), 1);
 }
