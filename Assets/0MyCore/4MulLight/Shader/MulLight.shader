@@ -10,11 +10,24 @@ Shader "Unlit/BRDFLight"
     }
     SubShader
     {
-        Tags { "LightMode" = "ForwardBase" }
-        LOD 100
+        Pass
+        {
+            Tags { "LightMode" = "ForwardBase" }
+            CGPROGRAM
+            #pragma target 3.0
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "MyLight.cginc"
+
+            ENDCG
+        }
 
         Pass
         {
+            Tags { "LightMode" = "ForwardAdd" }
+            Blend One One
+            ZWrite Off
             CGPROGRAM
             #pragma target 3.0
             #pragma vertex vert
