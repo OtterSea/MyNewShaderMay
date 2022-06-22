@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: MulLight_Mat
-  m_Shader: {fileID: 4800000, guid: 4a210817ed430c74484acce3b6f42c2d, type: 3}
+  m_Shader: {fileID: 4800000, guid: 2ffb2a98ed8e6cd4993944ce051bf1c3, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -77,4 +77,3 @@ Material:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecularColor: {r: 1, g: 1, b: 1, a: 1}
-  m_BuildTextureStacks: []
