@@ -10,9 +10,11 @@
 //模型顶点必定要做的操作：从模型空间转化到裁剪空间并传递给v2f的 vertex:SV_POSITION
 //模型空间法线转世界空间法线
 //获得摄像机视线
+//获得世界空间的模型顶点
 // appdata.vertex = UnityObjectToClipPos(v.vertex);
 // appdata.normal = UnityObjectToWorldNormal(v.normal);
 // appdata.viewDir = WorldSpaceViewDir(v.vertex);
+// o.worldPos = mul(unity_ObjectToWorld, v.vertex);
 
 //兰伯特光照公式（效果不是很好，一般少用
 //dot(归一化的法线， 归一化的光向量) * 光的颜色
@@ -49,6 +51,9 @@
 //高光反射需要定义float变量 _Gloss 并对高光反射变化量（即最后的dot进行：
 //pow(max(0, dot(worldNormal, halfLight)), _Gloss);
 //pow(max(0, dot(worldReflectDir, worldViewDir)), _Gloss);
+
+
+
 
 ///////////////////////////////
 ////////// 前向光照部分 ////////
