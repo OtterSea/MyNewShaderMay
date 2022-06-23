@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: TwoSpecular_Mat
-  m_Shader: {fileID: 4800000, guid: ad6328a4899b9534084b70630351f0b5, type: 3}
+  m_Shader: {fileID: 4800000, guid: 19f14a10018ef784b96b8300bc163006, type: 3}
   m_ShaderKeywords: 
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
@@ -28,4 +28,3 @@ Material:
     m_Colors:
     - _DiffuseColor: {r: 1, g: 1, b: 1, a: 1}
     - _SpecularOffset: {r: -1.46, g: -1.13, b: 0.14, a: 0}
-  m_BuildTextureStacks: []
