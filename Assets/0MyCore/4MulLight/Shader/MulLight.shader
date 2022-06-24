@@ -21,6 +21,22 @@ Shader "Unlit/BRDFLight"
             //运动的物体可能突然对某个光失去渲染，所以很突兀
             //为了解决问题，我们使用顶点光照而不是逐像素光照，Unity将依据关键字VERTEXLIGHT_ON 来判断有没有开启
             //Unity处理的顶点光照只能给 ForwardBase 用，且只能给点光源使用
+
+            //对上面的话进行矫正 重新查找了相关文章后了解到这个 VERTEXLIGHT_ON 是做什么的：
+            //Base光只能渲染平行光（_LightColor0表示平行光颜色）
+            //而第二个平行光、点光源、聚光灯等都是得在Add里渲染的，这样会有个问题
+            //比如我场景里没有平行光，只有点光，但是点光在Add里渲染，当点光离开光源半径的时候
+            //必定会立即失去点光的光照（和衰减没关系）
+            //非常突兀，特别是运动的物体，
+            //为了解决这个问题，Unity给Base光照添加了顶点点光源的功能：
+            //仅在点光源开启，没有平行光的时候，Unity将在Base里处理逐顶点光照（性能考虑）
+            //参考链接：https://zhuanlan.zhihu.com/p/362681324
+
+            //而且：之前我们一直说可以去 setting - quality - pixelLightCount 里设置逐像素光源处理的数量
+            //（默认是4）但即使把这个给关了 也会显示4个点光源，因为这个设置是有多少光源支持逐像素光照
+            //设置为2就只有两个逐像素，那么其他2个点光源就会拿去顶点着色器里进行计算
+            //没错， 也就是 VERTEXLIGHT_ON 
+            //Unity最多支持4个点光源
             #pragma multi_compile _ VERTEXLIGHT_ON
 
             #pragma vertex vert

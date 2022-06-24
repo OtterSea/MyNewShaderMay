@@ -109,7 +109,7 @@ UnityLight CreateLight (Interpolators i)
     return light;
 }
 
-
+//Add
 float4 frag (Interpolators i) : SV_Target
 {
     // float3 lightDir = _WorldSpaceLightPos0.xyz;
@@ -174,7 +174,7 @@ UnityIndirect CreateIndirectLight(Interpolators i)
     return indirectLight;
 }
 
-
+//Base
 float4 frag2 (Interpolators i) : SV_Target
 {
     float3 lightDir = _WorldSpaceLightPos0.xyz;
