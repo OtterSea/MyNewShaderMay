@@ -151,8 +151,43 @@ base_interpolator ForwardVert (appdata_base v)
     return i;
 }
 
+//计算盒投影：当反射的物体不是单纯的球体，而是平面的时候，就需要考虑盒投影的问题：
+//这是一套公式
+//盒投影确实会带来额外的消耗，我们对是否开启盒投影是可选的，在 ReflectionProbe 投影探针里有一个BoxProjection
+//开关，Unity将开关的信息存储在立方体贴图位置的第四分量w中，如果w分量大于0，我们就启用盒投影，用if在代码解决
+float3 BoxProjection(float3 direction, float3 position, float4 cubemapPosition,
+    float3 boxMin, float3 boxMax)
+{
+    //这部分的原理有空研究，总之目的明确：就是要找出
+    // boxMin -= position;
+    // boxMax -= position;
+    // float x = (direction.x > 0 ? boxMax.x : boxMin.x) / direction.x;
+    // float y = (direction.y > 0 ? boxMax.y : boxMin.y) / direction.y;
+    // float z = (direction.z > 0 ? boxMax.z : boxMin.z) / direction.z;
+    // float scalar = min(min(x, y), z);
+    //盒投影的w分量代表是否在组件里勾选了BoxProjection选项
+
+    //仅当当前环境支持盒投影的时候才能使用盒投影，使用关键字：
+    #if UNITY_SPECCUBE_BOX_PROJECTION
+    //这个关键字是为了解决：使用了if语句，Unity编译为OpenGL或Direct3D的时候
+    //未必会包含if语句 所以写入此关键字请求分支，虽然不建议太多分支，但是还行
+        UNITY_BRANCH
+        if(cubemapPosition.w > 0)
+        {
+            float3 factors = ((direction > 0 ? boxMax : boxMin) - position) / direction;
+            float scalar = min(min(factors.x, factors.y), factors.z);
+            direction = direction * scalar + (position - cubemapPosition);
+        }
+    #endif
+    return direction;
+
+    //盒投影是有Unity官方函数的：UnityStandardUtils的BoxProjectedCubemapDirection函数，做的内容一模一样
+    //但是他会归一化反射方向函数（这是没必要的，因为CUBE采样的时候，自动归一化采样向量）所以我们少写一个归一化
+    //省下了性能。
+}
+
 //创建间接灯光 用于BRDF函数
-UnityIndirect CreateIndirectLight (base_interpolator i) {
+UnityIndirect CreateIndirectLight (base_interpolator i, float3 viewDir) {
 	UnityIndirect indirectLight;
 	indirectLight.diffuse = 0;
 	indirectLight.specular = 0;
@@ -163,7 +198,119 @@ UnityIndirect CreateIndirectLight (base_interpolator i) {
 
 	#if defined(FORWARD_BASE_PASS)
 		indirectLight.diffuse += max(0, ShadeSH9(float4(i.normal, 1)));
+        //如果把反射考虑进去的话
+        // indirectLight.specular = float3(1, 0, 0);
+        //应该对天空盒进行采样(反射周围环境，天空盒是最直接的)，在Unity拥有默认的参数指向当前的天空盒：unity_SpecCube0
+        //CUBE贴图采样在不同平台上会有所不同，因此用UNITY_SAMPLE_TEXCUBE来处理差异
+
+        //直接采样颜色 float3 的话，结果非常地亮 因为立方体贴图包含了HDR颜色十七包含的来年高度值可以超过1
+        //我们必须将HDR（高动态范围）颜色转换为RGB
+        // float3 envSample = UNITY_SAMPLE_TEXCUBE(unity_SpecCube0, i.normal);
+        // indirectLight.specular = envSample;
+
+        //因此应该使用 UnityCG 的 DecodeHDR函数 输入HDR，转化为RGB
+        // float4 envSample = UNITY_SAMPLE_TEXCUBE(unity_SpecCube0, i.normal);
+        // indirectLight.specular = DecodeHDR(envSample, unity_SpecCube0_HDR);
+
+        //用法线采样非常地方便，但是有个问题，采样的结果并不取决于视线方向，结果就像球体画上了颜色，这并不是反射
+        //真正的反射是光线打到物体上，物体进行反射，刚好射进眼睛里的光就是看到的
+        //进行反推，所以使用reflect：把 viewDir 看成是入射光，让他进行reflect看能采样到什么东西
+        float3 reflectDir = reflect(-viewDir, i.normal);
+        // float4 envSample = UNITY_SAMPLE_TEXCUBE(unity_SpecCube0, reflectDir);
+        // indirectLight.specular = DecodeHDR(envSample, unity_SpecCube0_HDR);
+
+        //我们更希望获得物品周围的环境而不是天空盒，采样周围的环境得使用 反射探针
+        //GameObject/Light/Reflection Probe添加
+        //关于反射探针：他存在一个CUBE范围，进入范围的任何物体如果想使用 SpecCUBE 的话，必定会使用反射探针里烘焙的CUBE
+        //调节好范围后，点击下方的Bake，将开启渲染，烘焙非常耗时，实时渲染一般耗不起（可以开启每隔一段时间就实时渲染）
+        //CUBE贴图自带mipmapLOD层级，但我们可以用下面的函数主动采样LOD层级，而不是自动采样，通过Smoothness来控制粗糙度
+        //利用粗糙度来控制采样的结果是否模糊
+
+        // float roughness = 1 - _Smoothness;
+        // //实际上，粗糙度和mipmap层级的关系不是线性的，他们之间的公式是：
+        // roughness *= 1.7 - 0.7 * roughness;
+        // float4 envSample = UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0,
+        //     reflectDir, roughness * UNITY_SPECCUBE_LOD_STEPS);
+        // indirectLight.specular = DecodeHDR(envSample, unity_SpecCube0_HDR);
+
+        //当然了 老规矩，上面这些代码Unity内置肯定有相应的函数进行处理（包括对不同平台的处理）
+        Unity_GlossyEnvironmentData envData;
+        envData.roughness = 1 - _Smoothness;
+        // envData.reflUVW = reflectDir;        //使用反射向量是不对的 得考虑盒投影
+        envData.reflUVW = BoxProjection(reflectDir, i.worldPos, unity_SpecCube0_ProbePosition,
+            unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
+
+        //在实际的应用场景中，一旦物体离开了反射探针盒，就会立刻丢失反射CUBE，回归默认天空盒，这就非常突兀
+        //为了解决突兀，一般是在反射探针盒周围再放其他的反射探针，但是这样一来，在两个盒子的边界进行过度的时候
+        //就会立即转换，非常突兀，为了解决问题，我们得在两个探针（如果有）之间进行插值：
+        // indirectLight.specular = Unity_GlossyEnvironment(
+        //     UNITY_PASS_TEXCUBE(unity_SpecCube0), unity_SpecCube0_HDR, envData
+        // );
+        //上面是不考虑探针插值直接采样 unity_SpecCube0 的结果。
+        //unity会把第二个反射探针盒存放在：unity_SpecCube1里，相关参数只需要把0改成1即可
+        float3 probe0 = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE(unity_SpecCube0), 
+            unity_SpecCube0_HDR, envData);
+        //上面已经计算出第一个反射探针数据
+        //重新计算envData的反射采样角度，用 SpecCube1 来计算
+        envData.reflUVW = BoxProjection(reflectDir, i.worldPos, unity_SpecCube1_ProbePosition,
+            unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax);
+        //UNITY_PASS_TEXCUBE_SAMPLER 这个宏是用在当不存在 SpecCube1 的时候就不进行采样而是采样 0 
+        //此时两个探针盒子应该重叠，并且组件也可以设置探针盒子的混合模式和优先级
+        //当物体在两个探针之间移动的时候，对应的探针组件也会出现提示正在混合，如果想要无敌的混合效果
+        //那就在两个盒子之间放第三个探针盒，然后继续过渡
+        //任何探针盒都可以设置与天空盒进行混合，只需要将组件里的 ReflectionProbes 模式从 Blend Probes 改为：
+        //Blend Probes and Skybox 即可，这时就会在物体超出盒，去到没有另一个盒的地方的时候，进行天空盒混合
+        //还有其他模式：off不用探针，使用天空盒
+        //Simple禁用混合，只执行自己的探针或天空盒
+        // float3 probe1 = Unity_GlossyEnvironment(
+        //     UNITY_PASS_TEXCUBE_SAMPLER(unity_SpecCube1, unity_SpecCube0),
+        //     unity_SpecCube0_HDR, envData
+        // );
+        //Unity会自动为我们计算，两个探针盒应该使用哪个插值，将此插值优势数据存放在 BoxMin.w 中
+        //不使用插值，则 =1，如果使用，就设置为更小的数值里（所以Cube0应该填在第二个参数里
+        // indirectLight.specular = lerp(probe1, probe0, unity_SpecCube0_BoxMin.w);
+
+        //上面这种操作，太浪费性能了，万一有些电脑无法承受怎么办，所以必须优化：
+        //当电脑无法使用混合探针的时候，禁用混合：
+        #if UNITY_SPECCUBE_BLENDING
+            //利用插值器：interpolator也就是 Min的w分量，仅当物体在边界（w分量!=1的时候，才使用插值lerp
+            //否则就不使用，要不然每天都lerp会非常要命
+            float interpolator = unity_SpecCube0_BoxMin.w;
+            UNITY_BRANCH
+            if(interpolator < 0.99999)
+            {
+                float3 probe1 = Unity_GlossyEnvironment(
+                    UNITY_PASS_TEXCUBE_SAMPLER(unity_SpecCube1, unity_SpecCube0),
+                    unity_SpecCube0_HDR, envData
+                );
+                indirectLight.specular = lerp(probe1, probe0, interpolator);
+            }
+            else
+            {
+                indirectLight.specular = probe0;
+            }
+        #else
+            indirectLight.specular = probe0;
+        #endif
+        //类似的思想，盒投影也有一样的考虑，是否支持盒投影才使用盒投影
+        //UNITY_SPECCUBE_BOX_PROJECTION
+        //UNITY_SPECCUBE_BLENDING
+        //这两个关键字，是在编辑器依据目标平台而定义的，1表示定义 0表示不定义 着色器版本小于3.0时，
+        //则UnityStandardConfig会把他们设置为0
 	#endif
+
+    //tips:我想让镜子反射别的镜子，让镜子反射自己，怎么做：
+    //只需要把镜子本身设置为static，这样在bake的时候就会把镜子考虑进去，但是这么做的时候，是黑色的？
+    //因为在探针反射自己的时候，他自身的环境贴图还没生成呢，所以是黑色的
+    //Unity默认环境贴图里不包含反射，但是可以改：Lighting Setting - Environment - 有个Reflection Bounces模块
+    //默认情况下是1，我们设置为2，即可看到自己
+    //原理：设置为2，意味着Unity会正常进行第一遍环境贴图渲染，然后再进行第二遍（为了反射自己）
+    //设置为多少就意味着渲染多少次，最多支持5次，但是不会有人想在运行的时候执行这种东西
+
+    //反射总结：完美的镜子，不存在，利用反射探针，可以很方便实现反射的功能，但是并不是实现反射的唯一方法
+    //（我记得Shader入门书里就有另一种方法），但是反射探针还是有他的通用性，当然也有局限性
+    //了解他的用途和缺点，
+    //之后会介绍 屏幕空间反射（延迟渲染里介绍）
 
 	return indirectLight;
 }
@@ -225,7 +372,7 @@ float4 ForwardFrag (base_interpolator i) : SV_Target {
 		albedo, specularTint,
 		oneMinusReflectivity, _Smoothness,
 		i.normal, viewDir,
-		CreateLight(i), CreateIndirectLight(i)
+		CreateLight(i), CreateIndirectLight(i, viewDir)
 	);
 }
 
