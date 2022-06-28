@@ -1,55 +1,119 @@
-Shader "Unlit/SumLighting"
-{
-    Properties
-    {
-        _MainTex ("Texture", 2D) = "white" {}
-    }
-    SubShader
-    {
-        Tags { "RenderType"="Opaque" }
-        LOD 100
+Shader "Sum/MyUtilsLightingShader" {
 
-        Pass
-        {
-            CGPROGRAM
-            #pragma vertex vert
-            #pragma fragment frag
+	Properties {
+		_Tint ("Tint", Color) = (1, 1, 1, 1)
+		_MainTex ("Albedo", 2D) = "white" {}
 
-            #include "UnityCG.cginc"
+		[NoScaleOffset] _NormalMap ("Normals", 2D) = "bump" {}
+		_BumpScale ("Bump Scale", Float) = 1
 
-            struct appdata
-            {
-                float4 vertex : POSITION;
-                float2 uv : TEXCOORD0;
-            };
+		[NoScaleOffset] _MetallicMap ("Metallic", 2D) = "white" {}
+		[Gamma] _Metallic ("Metallic", Range(0, 1)) = 0
+		_Smoothness ("Smoothness", Range(0, 1)) = 0.1
 
-            struct v2f
-            {
-                float2 uv : TEXCOORD0;
-                UNITY_FOG_COORDS(1)
-                float4 vertex : SV_POSITION;
-            };
+		[NoScaleOffset] _EmissionMap ("Emission", 2D) = "black" {}
+		_Emission ("Emission", Color) = (0, 0, 0)
 
-            sampler2D _MainTex;
-            float4 _MainTex_ST;
+		_DetailTex ("Detail Albedo", 2D) = "gray" {}
+		[NoScaleOffset] _DetailNormalMap ("Detail Normals", 2D) = "bump" {}
+		_DetailBumpScale ("Detail Bump Scale", Float) = 1
+	}
 
-            v2f vert (appdata v)
-            {
-                v2f o;
-                o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
-                return o;
-            }
+	CGINCLUDE
 
-            fixed4 frag (v2f i) : SV_Target
-            {
-                // sample the texture
-                fixed4 col = tex2D(_MainTex, i.uv);
-                return col;
-            }
-            ENDCG
-        }
-    }
+	#define BINORMAL_PER_FRAGMENT
 
-    CustomEditor "SumLightingShaderGUI"
+    float4 _Tint;
+    sampler2D _MainTex, _DetailTex;
+    float4 _MainTex_ST, _DetailTex_ST;
+
+    sampler2D _NormalMap, _DetailNormalMap;
+    float _BumpScale, _DetailBumpScale;
+
+    sampler2D _MetallicMap;
+    float _Metallic;
+    float _Smoothness;
+
+    sampler2D _EmissionMap;
+    float3 _Emission;
+
+    #pragma target 3.0
+
+	ENDCG
+
+	SubShader {
+
+		Pass {
+			Tags {
+				"LightMode" = "ForwardBase"
+			}
+
+			CGPROGRAM
+
+			#pragma target 3.0
+
+			#pragma shader_feature _METALLIC_MAP
+			#pragma shader_feature _ _SMOOTHNESS_ALBEDO _SMOOTHNESS_METALLIC
+			#pragma shader_feature _EMISSION_MAP
+
+			#pragma multi_compile _ SHADOWS_SCREEN
+			#pragma multi_compile _ VERTEXLIGHT_ON
+
+            #pragma vertex ForwardVert
+            #pragma fragment ForwardFrag
+
+			#define FORWARD_BASE_PASS
+
+            #include "../../../0MyCginc/SumForwardLight.cginc"
+
+
+			ENDCG
+		}
+
+		Pass {
+			Tags {
+				"LightMode" = "ForwardAdd"
+			}
+
+			Blend One One
+			ZWrite Off
+
+			CGPROGRAM
+
+			#pragma target 3.0
+
+			#pragma shader_feature _METALLIC_MAP
+			#pragma shader_feature _ _SMOOTHNESS_ALBEDO _SMOOTHNESS_METALLIC
+
+			#pragma multi_compile_fwdadd_fullshadows
+			
+            #pragma vertex ForwardVert
+            #pragma fragment ForwardFrag
+
+            #include "../../../0MyCginc/SumForwardLight.cginc"
+
+			ENDCG
+		}
+
+		Pass {
+			Tags {
+				"LightMode" = "ShadowCaster"
+			}
+
+			CGPROGRAM
+
+			#pragma target 3.0
+
+			#pragma multi_compile_shadowcaster
+
+            #pragma vertex ForwardShadowVert
+            #pragma fragment ForwardShadowFrag
+
+            #include "../../../0MyCginc/SumForwardShadow.cginc"
+
+			ENDCG
+		}
+	}
+
+	CustomEditor "SumLightingShaderGUI"
 }
